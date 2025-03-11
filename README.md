@@ -7,14 +7,30 @@ A simple Python package for controlling Tuya smart devices, primarily focused on
 1. Clone this repository
 2. Install dependencies:
    ```
-   pip install tinytuya python-dotenv
+   pip install -r requirements.txt
    ```
-3. Create a `.env` file with your Tuya credentials:
+
+## Device Configuration
+
+Before using this package, you need to generate the required configuration files using the tinytuya wizard:
+
+1. Run the tinytuya wizard command:
    ```
-   TUYA_API_KEY=your_api_key
-   TUYA_API_SECRET=your_api_secret
-   TUYA_REGION=eu  # or cn, us, etc.
+   python -m tinytuya wizard
    ```
+2. Follow the prompts to:
+   - Enter your Tuya IoT Platform credentials when asked
+   - Connect to your Tuya IoT Platform account
+   - Discover your devices
+   - Scan your network to find device IP addresses
+   
+This wizard will generate several important configuration files:
+- `devices.json` - Contains your device information including IDs and keys
+- `snapshot.json` - Current state of your devices
+- `tuya-raw.json` - Raw API response data
+- `tinytuya.json` - Configuration for the tinytuya library
+
+These files are required for the application to function properly.
 
 ## Usage
 
@@ -72,4 +88,3 @@ See the [programs README](programs/README.md) for more details on available ligh
 
 - Python 3.6+
 - tinytuya
-- python-dotenv

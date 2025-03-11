@@ -31,19 +31,8 @@ Examples:
 
 import sys
 import os
-from dotenv import load_dotenv
-
-from utils.device_manager import setup_devices, create_or_update_devices_json
-from utils.device_manager import connect_device
+from utils.device_manager import setup_devices, connect_device
 from commands.actions import perform_action
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Get API credentials from environment variables
-TUYA_API_KEY = os.getenv("TUYA_API_KEY")
-TUYA_API_SECRET = os.getenv("TUYA_API_SECRET")
-TUYA_REGION = os.getenv("TUYA_REGION", "eu")  # Default to EU region if not specified
 
 
 def print_usage():
@@ -65,12 +54,13 @@ Commands:
 
 
 def main():
-    # Check if devices.json exists, if not, try to create it
-    if not os.path.exists("devices.json") and TUYA_API_KEY and TUYA_API_SECRET:
-        print("devices.json not found. Attempting to create it...")
-        if not create_or_update_devices_json():
-            print("Could not create devices.json. Exiting.")
-            return
+    # Check if devices.json exists
+    if not os.path.exists("devices.json"):
+        print("Error: devices.json not found.")
+        print(
+            "Please run 'python -m tinytuya wizard' to generate the required configuration files."
+        )
+        return
 
     # Get devices configuration
     device_configs = setup_devices()
