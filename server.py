@@ -96,12 +96,22 @@ def run_program(program_name, bulb_name, duration, socket_io):
         stop_event = stop_events.get(f"{bulb_name}_{program_name}", threading.Event())
         stop_events[f"{bulb_name}_{program_name}"] = stop_event
 
+        # Add programs directory to path if needed
+        programs_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "programs"
+        )
+        if programs_dir not in sys.path:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            print(f"Added {os.path.dirname(os.path.abspath(__file__))} to sys.path")
+
         # Import the module
         module_path = f"programs.{program_name}"
         print(f"Importing module: {module_path}")
+        print(f"Python path: {sys.path}")
         try:
             program_module = importlib.import_module(module_path)
             print(f"Successfully imported module: {module_path}")
+            print(f"Module methods: {dir(program_module)}")
         except Exception as e:
             print(f"Error importing module {module_path}: {e}")
             import traceback
@@ -407,29 +417,44 @@ def get_programs():
 def run_program_api():
     """Run a lighting program"""
     data = request.json
+    print(f"Program run request: {data}")
+
     if not all(key in data for key in ["program", "bulb"]):
-        return jsonify({"error": "Program and bulb name must be provided"}), 400
+        error_msg = "Program and bulb name must be provided"
+        print(f"API error: {error_msg}")
+        return jsonify({"error": error_msg}), 400
 
     program = data["program"]
     bulb_name = data["bulb"]
     duration = data.get("duration", 60)  # Default 60 seconds if not specified
 
+    print(
+        f"Processing program run request: program={program}, bulb={bulb_name}, duration={duration}"
+    )
+
     # Check if bulb exists
     if bulb_name != "all_bulbs" and (
         bulb_name not in bulbs or "device" not in bulbs[bulb_name]
     ):
-        return jsonify({"error": f"Bulb {bulb_name} not found or offline"}), 404
+        error_msg = f"Bulb {bulb_name} not found or offline"
+        print(f"API error: {error_msg}")
+        return jsonify({"error": error_msg}), 404
 
     # Check if program exists
     program_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "programs", f"{program}.py"
     )
     if not os.path.exists(program_path):
-        return jsonify({"error": f"Program {program} not found"}), 404
+        error_msg = f"Program {program} not found at {program_path}"
+        print(f"API error: {error_msg}")
+        return jsonify({"error": error_msg}), 404
+
+    print(f"Program file found: {program_path}")
 
     # Stop any running program for this bulb
     thread_key = f"{bulb_name}_{program}"
     if thread_key in program_threads and program_threads[thread_key].is_alive():
+        print(f"Stopping existing program: {thread_key}")
         if thread_key in stop_events:
             stop_events[thread_key].set()  # Signal the thread to stop
         program_threads[thread_key].join(timeout=2)  # Wait for it to stop
@@ -438,11 +463,15 @@ def run_program_api():
     stop_event = threading.Event()
     stop_events[thread_key] = stop_event
 
+    print(f"Created stop event: {thread_key}")
+
     # Start the program in a new thread
     thread = threading.Thread(
         target=run_program, args=(program, bulb_name, duration, socketio), daemon=True
     )
     program_threads[thread_key] = thread
+
+    print(f"Starting thread for program: {thread_key}")
     thread.start()
 
     return jsonify(

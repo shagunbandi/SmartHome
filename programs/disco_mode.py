@@ -94,13 +94,14 @@ def run_program(device, duration=60, stop_event=None, interval=0.3):
             stop_event is None or not stop_event.is_set()
         ):
             # Generate a vibrant color
-            color = generate_vibrant_color()
-            print(f"Disco color: RGB({color[0]}, {color[1]}, {color[2]})")
+            r, g, b = generate_vibrant_color()
+            print(f"Disco color: RGB({r}, {g}, {b})")
 
             # Apply to all devices
             for device in devices:
                 try:
-                    set_color(device, *color)
+                    # Make sure we're passing proper integer values
+                    set_color(device, int(r), int(g), int(b))
                 except Exception as e:
                     print(f"Error setting color: {e}")
                     traceback.print_exc()
