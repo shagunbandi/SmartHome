@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Disco Mode for Tuya Smart Bulbs
+Disco Mode Program for Tuya Smart Bulbs
 
-This program creates a disco-like effect with rapid color changes on your Tuya smart bulbs.
-It can target a specific bulb or all bulbs.
+This program creates a disco-like effect with rapid color changes, focusing on vibrant colors.
 
 Usage:
     python programs/disco_mode.py [bulb_name] [duration_seconds]
@@ -19,6 +18,8 @@ import time
 import random
 import os
 import signal
+import threading
+import traceback
 
 # Add parent directory to path so we can import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,99 +39,137 @@ def signal_handler(sig, frame):
 
 
 def generate_vibrant_color():
-    """Generate vibrant RGB values for disco effect"""
-    # Use more vibrant colors by making at least one value high
-    color_type = random.randint(1, 6)
+    """Generate vibrant RGB values for a disco effect"""
+    # Generate at least one color channel with high intensity
+    # and make the other channels more random
+    primary = random.randint(0, 2)  # 0=R, 1=G, 2=B
 
-    if color_type == 1:  # Red dominant
-        return 255, random.randint(0, 100), random.randint(0, 100)
-    elif color_type == 2:  # Green dominant
-        return random.randint(0, 100), 255, random.randint(0, 100)
-    elif color_type == 3:  # Blue dominant
-        return random.randint(0, 100), random.randint(0, 100), 255
-    elif color_type == 4:  # Yellow
-        return 255, 255, random.randint(0, 100)
-    elif color_type == 5:  # Magenta
-        return 255, random.randint(0, 100), 255
-    else:  # Cyan
-        return random.randint(0, 100), 255, 255
+    r = random.randint(180, 255) if primary == 0 else random.randint(0, 100)
+    g = random.randint(180, 255) if primary == 1 else random.randint(0, 100)
+    b = random.randint(180, 255) if primary == 2 else random.randint(0, 100)
+
+    return r, g, b
+
+
+def run_program(device, duration=60, stop_event=None, interval=0.3):
+    """
+    Run the disco mode program on a device or list of devices
+
+    Args:
+        device: A single bulb device or list of devices
+        duration: Duration in seconds (default 60 seconds)
+        stop_event: Optional threading.Event to signal when to stop
+        interval: Time between color changes in seconds (default 0.3)
+    """
+    print(
+        f"Starting disco mode with parameters: duration={duration}, stop_event={stop_event is not None}"
+    )
+
+    try:
+        # Handle either single device or list of devices
+        devices = [device] if not isinstance(device, list) else device
+
+        # Print device info
+        print(f"Running disco mode on {len(devices)} device(s)")
+
+        # Settings
+        color_change_interval = interval  # seconds between color changes
+
+        # Turn on all bulbs
+        for device in devices:
+            try:
+                turn_on_bulb(device)
+            except Exception as e:
+                print(f"Error turning on device: {e}")
+                traceback.print_exc()
+
+        print(f"Starting disco mode for {duration} seconds...")
+
+        # Calculate end time
+        start_time = time.time()
+        end_time = start_time + duration
+
+        # Keep running until duration ends or stopped
+        while time.time() < end_time and (
+            stop_event is None or not stop_event.is_set()
+        ):
+            # Generate a vibrant color
+            color = generate_vibrant_color()
+            print(f"Disco color: RGB({color[0]}, {color[1]}, {color[2]})")
+
+            # Apply to all devices
+            for device in devices:
+                try:
+                    set_color(device, *color)
+                except Exception as e:
+                    print(f"Error setting color: {e}")
+                    traceback.print_exc()
+
+            # Sleep for the interval
+            time.sleep(color_change_interval)
+
+            # Display remaining time every few color changes
+            if random.randint(1, 10) == 1:
+                remaining = end_time - time.time()
+                print(f"Disco mode: {int(remaining)} seconds remaining")
+
+    except Exception as e:
+        print(f"Error in disco mode: {e}")
+        traceback.print_exc()
+
+    print("Disco mode program completed")
 
 
 def main():
     # Register signal handler for clean exit with Ctrl+C
     signal.signal(signal.SIGINT, signal_handler)
 
+    # Parse command-line arguments
+    if len(sys.argv) < 2:
+        print("Usage: python disco_mode.py [bulb_name] [duration_seconds]")
+        return
+
+    bulb_name = sys.argv[1].lower()
+
+    # Default duration 30 seconds if not specified
+    duration_seconds = 30
+    if len(sys.argv) > 2:
+        try:
+            duration_seconds = int(sys.argv[2])
+        except ValueError:
+            print(f"Invalid duration: {sys.argv[2]}. Using default (30 seconds).")
+
     # Get devices configuration
     device_configs = setup_devices()
 
-    # Default values
-    bulb_name = "all_bulbs"  # Default to all bulbs
-    duration = 30  # Default to 30 seconds
+    # Handle the special case of controlling all bulbs
+    if bulb_name == "all_bulbs":
+        devices = []
+        for name, config in device_configs.items():
+            print(f"Adding bulb: {name}")
+            device = connect_device(config)
+            devices.append(device)
 
-    # Parse command line arguments
-    if len(sys.argv) > 1:
-        bulb_name = sys.argv[1].lower()
+        if not devices:
+            print("No bulbs found.")
+            return
 
-    if len(sys.argv) > 2:
-        try:
-            duration = int(sys.argv[2])
-        except ValueError:
-            print(f"Invalid duration: {sys.argv[2]}. Using default: 30 seconds.")
-            duration = 30
+        # Call run_program with the list of devices
+        run_program(devices, duration=duration_seconds)
+        return
 
-    # Validate bulb name
-    if bulb_name != "all_bulbs" and bulb_name not in device_configs:
+    # Handle single bulb
+    if bulb_name not in device_configs:
         print(f"Unknown bulb name: {bulb_name}")
         print(f"Available bulbs: {', '.join(device_configs.keys())}, all_bulbs")
         return
 
-    # Configure bulbs
-    bulbs = {}
-    if bulb_name == "all_bulbs":
-        print("Setting up all bulbs for disco mode...")
-        for name, config in device_configs.items():
-            bulb = connect_device(config)
-            turn_on_bulb(bulb)
-            bulbs[name] = bulb
-    else:
-        print(f"Setting up {bulb_name} for disco mode...")
-        bulb = connect_device(device_configs[bulb_name])
-        turn_on_bulb(bulb)
-        bulbs[bulb_name] = bulb
+    # Connect to the bulb
+    config = device_configs[bulb_name]
+    device = connect_device(config)
 
-    # Track start time
-    start_time = time.time()
-    change_interval = 0.3  # Very quick changes for disco effect
-
-    # Main program loop
-    try:
-        print(f"Starting disco mode for {duration} seconds. Press Ctrl+C to exit.")
-        print("Hold on to your eyes! It's about to get flashy...")
-
-        cycle_count = 0
-        while running and (time.time() - start_time) < duration:
-            cycle_count += 1
-
-            # Generate new color
-            r, g, b = generate_vibrant_color()
-
-            # Apply to all configured bulbs
-            for name, bulb in bulbs.items():
-                set_color(bulb, r, g, b)
-
-            # Brief status update every 10 cycles
-            if cycle_count % 10 == 0:
-                elapsed = time.time() - start_time
-                remaining = max(0, duration - elapsed)
-                print(f"Disco cycle {cycle_count}, {remaining:.1f} seconds remaining")
-
-            # Quick delay for next color
-            time.sleep(change_interval)
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-    print("Disco mode ended. Your lights have had quite the workout!")
+    # Run the program
+    run_program(device, duration=duration_seconds)
 
 
 if __name__ == "__main__":

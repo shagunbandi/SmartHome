@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home - Bulb Control</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2c3e50;
+            --accent-color: #e74c3c;
+            --light-color: #ecf0f1;
+            --dark-color: #2c3e50;
+            --success-color: #2ecc71;
+        }
+        
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding-bottom: 40px;
+        }
+        
+        .navbar-brand {
+            font-weight: bold;
+            color: var(--primary-color) !important;
+        }
+        
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card-header {
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 10px 10px 0 0 !important;
+            font-weight: 600;
+        }
+        
+        .bulb-card {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .bulb-status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+        }
+        
+        .status-online {
+            background-color: var(--success-color);
+        }
+        
+        .status-offline {
+            background-color: var(--accent-color);
+        }
+        
+        .color-picker {
+            width: 100%;
+            height: 40px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+        }
+        
+        .bulb-toggle {
+            cursor: pointer;
+            font-size: 2rem;
+            transition: color 0.3s ease;
+        }
+        
+        .bulb-on {
+            color: #f1c40f;
+            text-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+        }
+        
+        .bulb-off {
+            color: #7f8c8d;
+        }
+        
+        .program-card {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .program-card:hover {
+            background-color: #e9ecef;
+        }
+        
+        .program-card.active {
+            background-color: rgba(52, 152, 219, 0.1);
+            border-color: var(--primary-color);
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        /* Loading animation */
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid var(--primary-color);
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Media queries for responsive design */
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 10px;
+            }
+            
+            .bulb-toggle {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation bar -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-lightbulb me-2"></i>Smart Home Lighting Control
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="refreshStatus">
+                            <i class="fas fa-sync-alt me-1"></i> Refresh Status
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="container">
+        <!-- Loading indicator -->
+        <div id="loading" class="text-center mb-4">
+            <div class="loader"></div>
+            <p class="mt-2">Loading bulbs...</p>
+        </div>
+
+        <!-- Bulbs container -->
+        <div id="bulbsContainer" class="row" style="display: none;">
+            <!-- Bulb cards will be dynamically inserted here -->
+        </div>
+
+        <!-- Programs section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Lighting Programs</h5>
+                        <button id="runProgramBtn" class="btn btn-sm btn-primary" disabled>Run Program</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h6>1. Select a Program</h6>
+                                <div id="programsList" class="list-group">
+                                    <!-- Programs will be inserted here -->
+                                    <div class="text-center my-3">
+                                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <span class="ms-2">Loading programs...</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>2. Select Bulb(s)</h6>
+                                <select id="programBulbSelect" class="form-select mb-3">
+                                    <option value="" selected disabled>Choose a bulb</option>
+                                    <option value="all_bulbs">All Bulbs</option>
+                                    <!-- Individual bulbs will be added here -->
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>3. Set Duration</h6>
+                                <div class="input-group mb-3">
+                                    <input type="number" id="programDuration" class="form-control" min="10" max="3600" value="60">
+                                    <span class="input-group-text">seconds</span>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="indefiniteCheck">
+                                    <label class="form-check-label" for="indefiniteCheck">
+                                        Run indefinitely
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Running program status -->
+                        <div id="programStatus" class="alert alert-info mt-3" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-play-circle me-2"></i>
+                                    <span id="programStatusText">Program running...</span>
+                                </div>
+                                <button id="stopProgramBtn" class="btn btn-sm btn-danger">
+                                    <i class="fas fa-stop me-1"></i> Stop
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div class="toast align-items-center text-white bg-primary" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="fas fa-info-circle me-2"></i>
+                <span id="toastMessage"></span>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io/client-dist/socket.io.min.js"></script>
+    <script>
+        // Connect to the Socket.IO server
+        const socket = io();
+        
+        // Toast notification
+        const toastEl = document.querySelector('.toast');
+        const toast = new bootstrap.Toast(toastEl);
+        
+        function showToast(message, type = 'primary') {
+            document.getElementById('toastMessage').textContent = message;
+            toastEl.classList.remove('bg-primary', 'bg-success', 'bg-danger');
+            toastEl.classList.add(`bg-${type}`);
+            toast.show();
+        }
+        
+        // Global variables
+        let bulbs = {};
+        let programs = [];
+        let currentProgram = null;
+        let currentProgramBulb = null;
+        let runningProgram = null;
+        
+        // Fetch bulbs data
+        async function fetchBulbs() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('bulbsContainer').style.display = 'none';
+                
+                const response = await fetch('/api/bulbs');
+                bulbs = await response.json();
+                
+                renderBulbs();
+                updateProgramBulbSelect();
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('bulbsContainer').style.display = 'flex';
+                
+                showToast('Bulbs loaded successfully', 'success');
+            } catch (error) {
+                console.error('Error fetching bulbs:', error);
+                showToast('Failed to load bulbs', 'danger');
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        // Fetch programs data
+        async function fetchPrograms() {
+            try {
+                const response = await fetch('/api/programs');
+                const data = await response.json();
+                programs = data.programs;
+                renderPrograms();
+            } catch (error) {
+                console.error('Error fetching programs:', error);
+                showToast('Failed to load programs', 'danger');
+            }
+        }
+        
+        // Render bulbs in the UI
+        function renderBulbs() {
+            const container = document.getElementById('bulbsContainer');
+            container.innerHTML = '';
+            
+            Object.entries(bulbs).forEach(([name, bulb]) => {
+                const isOnline = bulb.status && bulb.status.online;
+                const isPowered = bulb.status && bulb.status.power;
+                const brightness = bulb.status && bulb.status.brightness ? bulb.status.brightness : 500;
+                const temperature = bulb.status && bulb.status.temperature ? bulb.status.temperature : 500;
+                
+                const bulbCard = document.createElement('div');
+                bulbCard.className = 'col-md-6 col-lg-4';
+                bulbCard.innerHTML = `
+                    <div class="card bulb-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">${name.charAt(0).toUpperCase() + name.slice(1)}</h5>
+                            <div class="bulb-status ${isOnline ? 'status-online' : 'status-offline'}" 
+                                 title="${isOnline ? 'Online' : 'Offline'}"></div>
+                        </div>
+                        <div class="card-body">
+                            ${isOnline ? `
+                                <div class="text-center mb-4">
+                                    <i class="fas fa-lightbulb bulb-toggle ${isPowered ? 'bulb-on' : 'bulb-off'}" 
+                                       data-bulb="${name}" data-status="${isPowered}"></i>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Brightness</label>
+                                    <input type="range" class="slider brightness-slider" min="10" max="1000" value="${brightness}"
+                                           data-bulb="${name}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Color Temperature</label>
+                                    <input type="range" class="slider temperature-slider" min="0" max="1000" value="${temperature}"
+                                           data-bulb="${name}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Color</label>
+                                    <input type="color" class="color-picker" data-bulb="${name}">
+                                </div>
+                            ` : `
+                                <div class="alert alert-danger text-center">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Bulb is offline
+                                </div>
+                                ${bulb.status && bulb.status.error ? `
+                                    <div class="alert alert-warning">
+                                        <small>Error: ${bulb.status.error}</small>
+                                    </div>
+                                ` : ''}
+                            `}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(bulbCard);
+            });
+            
+            // Add event listeners to bulb controls
+            addBulbControlListeners();
+        }
+        
+        // Render available programs
+        function renderPrograms() {
+            const programsList = document.getElementById('programsList');
+            programsList.innerHTML = '';
+            
+            if (programs.length === 0) {
+                programsList.innerHTML = `
+                    <div class="alert alert-warning">
+                        No programs available
+                    </div>
+                `;
+                return;
+            }
+            
+            programs.forEach(program => {
+                const programItem = document.createElement('a');
+                programItem.href = '#';
+                programItem.className = 'list-group-item list-group-item-action program-card';
+                programItem.dataset.program = program;
+                
+                let iconClass;
+                switch(program) {
+                    case 'disco_mode':
+                        iconClass = 'fa-music';
+                        break;
+                    case 'color_fade':
+                        iconClass = 'fa-water';
+                        break;
+                    case 'random_colors':
+                        iconClass = 'fa-random';
+                        break;
+                    default:
+                        iconClass = 'fa-lightbulb';
+                }
+                
+                programItem.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas ${iconClass} me-2"></i>
+                            ${formatProgramName(program)}
+                        </div>
+                    </div>
+                `;
+                
+                programsList.appendChild(programItem);
+                
+                // Add click event
+                programItem.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    selectProgram(program);
+                });
+            });
+        }
+        
+        // Format program name for display
+        function formatProgramName(name) {
+            return name.split('_')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+        
+        // Update the bulb select dropdown for programs
+        function updateProgramBulbSelect() {
+            const select = document.getElementById('programBulbSelect');
+            
+            // Clear existing options except for the default and "All Bulbs"
+            while (select.options.length > 2) {
+                select.remove(2);
+            }
+            
+            // Add individual bulbs
+            Object.keys(bulbs).forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+                select.appendChild(option);
+            });
+        }
+        
+        // Add event listeners to bulb controls
+        function addBulbControlListeners() {
+            // Toggle bulbs on/off
+            document.querySelectorAll('.bulb-toggle').forEach(el => {
+                el.addEventListener('click', async () => {
+                    const bulbName = el.dataset.bulb;
+                    const status = el.dataset.status === 'true';
+                    
+                    try {
+                        await fetch(`/api/bulbs/${bulbName}/toggle`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        // UI will be updated by socket.io event
+                    } catch (error) {
+                        console.error('Error toggling bulb:', error);
+                        showToast(`Failed to toggle ${bulbName}`, 'danger');
+                    }
+                });
+            });
+            
+            // Brightness sliders
+            document.querySelectorAll('.brightness-slider').forEach(el => {
+                el.addEventListener('change', async () => {
+                    const bulbName = el.dataset.bulb;
+                    const brightness = parseInt(el.value);
+                    
+                    try {
+                        await fetch(`/api/bulbs/${bulbName}/brightness`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ brightness })
+                        });
+                        
+                        showToast(`${bulbName}: Brightness set to ${brightness}`, 'success');
+                    } catch (error) {
+                        console.error('Error setting brightness:', error);
+                        showToast(`Failed to set brightness for ${bulbName}`, 'danger');
+                    }
+                });
+            });
+            
+            // Temperature sliders
+            document.querySelectorAll('.temperature-slider').forEach(el => {
+                el.addEventListener('change', async () => {
+                    const bulbName = el.dataset.bulb;
+                    const temperature = parseInt(el.value);
+                    
+                    try {
+                        await fetch(`/api/bulbs/${bulbName}/temperature`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ temperature })
+                        });
+                        
+                        showToast(`${bulbName}: Temperature set to ${temperature}`, 'success');
+                    } catch (error) {
+                        console.error('Error setting temperature:', error);
+                        showToast(`Failed to set temperature for ${bulbName}`, 'danger');
+                    }
+                });
+            });
+            
+            // Color pickers
+            document.querySelectorAll('.color-picker').forEach(el => {
+                el.addEventListener('change', async () => {
+                    const bulbName = el.dataset.bulb;
+                    const color = el.value;
+                    
+                    // Convert hex color to RGB
+                    const r = parseInt(color.substring(1, 3), 16);
+                    const g = parseInt(color.substring(3, 5), 16);
+                    const b = parseInt(color.substring(5, 7), 16);
+                    
+                    try {
+                        await fetch(`/api/bulbs/${bulbName}/color`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ r, g, b })
+                        });
+                        
+                        showToast(`${bulbName}: Color set to RGB(${r},${g},${b})`, 'success');
+                    } catch (error) {
+                        console.error('Error setting color:', error);
+                        showToast(`Failed to set color for ${bulbName}`, 'danger');
+                    }
+                });
+            });
+        }
+        
+        // Select a program
+        function selectProgram(program) {
+            currentProgram = program;
+            
+            // Update UI to show which program is selected
+            document.querySelectorAll('.program-card').forEach(el => {
+                if (el.dataset.program === program) {
+                    el.classList.add('active');
+                } else {
+                    el.classList.remove('active');
+                }
+            });
+            
+            // Enable the run button if a bulb is also selected
+            updateRunProgramButton();
+        }
+        
+        // Update the run program button state
+        function updateRunProgramButton() {
+            const runBtn = document.getElementById('runProgramBtn');
+            const bulbSelect = document.getElementById('programBulbSelect');
+            
+            currentProgramBulb = bulbSelect.value;
+            
+            if (currentProgram && currentProgramBulb) {
+                runBtn.disabled = false;
+            } else {
+                runBtn.disabled = true;
+            }
+        }
+        
+        // Run a program
+        async function runProgram() {
+            if (!currentProgram || !currentProgramBulb) return;
+            
+            const duration = document.getElementById('indefiniteCheck').checked 
+                ? 3600 * 24 // 24 hours as "indefinite"
+                : parseInt(document.getElementById('programDuration').value);
+            
+            try {
+                const response = await fetch('/api/programs/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        program: currentProgram,
+                        bulb: currentProgramBulb,
+                        duration: duration
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    runningProgram = {
+                        program: currentProgram,
+                        bulb: currentProgramBulb
+                    };
+                    
+                    document.getElementById('programStatusText').textContent = 
+                        `Running ${formatProgramName(currentProgram)} on ${currentProgramBulb === 'all_bulbs' ? 'all bulbs' : currentProgramBulb} for ${duration} seconds`;
+                    document.getElementById('programStatus').style.display = 'block';
+                    
+                    showToast(`Program started: ${formatProgramName(currentProgram)}`, 'success');
+                } else {
+                    showToast(`Failed to start program: ${data.error || 'Unknown error'}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Error running program:', error);
+                showToast('Failed to start program', 'danger');
+            }
+        }
+        
+        // Stop a running program
+        async function stopProgram() {
+            if (!runningProgram) return;
+            
+            try {
+                const response = await fetch('/api/programs/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        program: runningProgram.program,
+                        bulb: runningProgram.bulb
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('programStatus').style.display = 'none';
+                    runningProgram = null;
+                    showToast('Program stopped', 'success');
+                } else {
+                    showToast(`Failed to stop program: ${data.error || 'Unknown error'}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Error stopping program:', error);
+                showToast('Failed to stop program', 'danger');
+            }
+        }
+        
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial data load
+            fetchBulbs();
+            fetchPrograms();
+            
+            // Refresh button
+            document.getElementById('refreshStatus').addEventListener('click', (e) => {
+                e.preventDefault();
+                fetchBulbs();
+            });
+            
+            // Program bulb select change
+            document.getElementById('programBulbSelect').addEventListener('change', updateRunProgramButton);
+            
+            // Run program button
+            document.getElementById('runProgramBtn').addEventListener('click', runProgram);
+            
+            // Stop program button
+            document.getElementById('stopProgramBtn').addEventListener('click', stopProgram);
+            
+            // Indefinite checkbox
+            document.getElementById('indefiniteCheck').addEventListener('change', function() {
+                document.getElementById('programDuration').disabled = this.checked;
+            });
+        });
+        
+        // Socket.IO event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+        });
+        
+        socket.on('bulb_update', (data) => {
+            console.log('Bulb update received:', data);
+            
+            // Update local bulb data
+            if (bulbs[data.bulb]) {
+                if (!bulbs[data.bulb].status) {
+                    bulbs[data.bulb].status = {};
+                }
+                
+                Object.assign(bulbs[data.bulb].status, data.status);
+                
+                // Update UI if needed
+                const bulbToggle = document.querySelector(`.bulb-toggle[data-bulb="${data.bulb}"]`);
+                if (bulbToggle && 'power' in data.status) {
+                    bulbToggle.classList.toggle('bulb-on', data.status.power);
+                    bulbToggle.classList.toggle('bulb-off', !data.status.power);
+                    bulbToggle.dataset.status = data.status.power;
+                }
+                
+                // Update sliders if present
+                if ('brightness' in data.status) {
+                    const slider = document.querySelector(`.brightness-slider[data-bulb="${data.bulb}"]`);
+                    if (slider) slider.value = data.status.brightness;
+                }
+                
+                if ('temperature' in data.status) {
+                    const slider = document.querySelector(`.temperature-slider[data-bulb="${data.bulb}"]`);
+                    if (slider) slider.value = data.status.temperature;
+                }
+            }
+        });
+        
+        socket.on('program_status', (data) => {
+            console.log('Program status update:', data);
+            
+            // Update program status display
+            if (data.status === 'completed' || data.status === 'stopped' || data.status === 'error') {
+                if (runningProgram && runningProgram.program === data.program && runningProgram.bulb === data.bulb) {
+                    document.getElementById('programStatus').style.display = 'none';
+                    runningProgram = null;
+                    
+                    if (data.status === 'error') {
+                        showToast(`Program error: ${data.error || 'Unknown error'}`, 'danger');
+                    } else {
+                        showToast(`Program ${data.status}`, 'info');
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html> 

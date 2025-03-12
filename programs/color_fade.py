@@ -20,6 +20,7 @@ import random
 import os
 import signal
 import math
+import threading
 
 # Add parent directory to path so we can import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -48,11 +49,10 @@ def generate_soft_color():
 
 
 def interpolate_color(color1, color2, step, total_steps):
-    """Create a smooth transition between two colors"""
+    """Interpolate between two colors"""
     r1, g1, b1 = color1
     r2, g2, b2 = color2
 
-    # Calculate interpolated color values
     r = int(r1 + (r2 - r1) * step / total_steps)
     g = int(g1 + (g2 - g1) * step / total_steps)
     b = int(b1 + (b2 - b1) * step / total_steps)
@@ -60,110 +60,132 @@ def interpolate_color(color1, color2, step, total_steps):
     return r, g, b
 
 
-def main():
-    # Register signal handler for clean exit with Ctrl+C
-    signal.signal(signal.SIGINT, signal_handler)
+# New function that can be called directly from the server
+def run_program(device, duration=600, stop_event=None):
+    """
+    Run the color fade program on a device or list of devices
 
-    # Get devices configuration
-    device_configs = setup_devices()
+    Args:
+        device: A single bulb device or list of devices
+        duration: Duration in seconds (default 10 minutes)
+        stop_event: Optional threading.Event to signal when to stop
+    """
+    # Handle either single device or list of devices
+    devices = [device] if not isinstance(device, list) else device
 
-    # Default values
-    bulb_name = "all_bulbs"  # Default to all bulbs
-    duration_minutes = 15  # Default to 15 minutes
-    transition_time = 30  # Seconds to transition between colors
+    # Settings
+    transition_time = 4  # Seconds per transition
+    total_steps = 40  # Steps per transition
+    step_time = transition_time / total_steps
 
-    # Parse command line arguments
-    if len(sys.argv) > 1:
-        bulb_name = sys.argv[1].lower()
-
-    if len(sys.argv) > 2:
-        try:
-            duration_minutes = int(sys.argv[2])
-        except ValueError:
-            print(f"Invalid duration: {sys.argv[2]}. Using default: 15 minutes.")
-            duration_minutes = 15
-
-    # Validate bulb name
-    if bulb_name != "all_bulbs" and bulb_name not in device_configs:
-        print(f"Unknown bulb name: {bulb_name}")
-        print(f"Available bulbs: {', '.join(device_configs.keys())}, all_bulbs")
-        return
-
-    # Configure bulbs
-    bulbs = {}
-    if bulb_name == "all_bulbs":
-        print("Setting up all bulbs for color fade...")
-        for name, config in device_configs.items():
-            bulb = connect_device(config)
-            turn_on_bulb(bulb)
-            bulbs[name] = bulb
-    else:
-        print(f"Setting up {bulb_name} for color fade...")
-        bulb = connect_device(device_configs[bulb_name])
-        turn_on_bulb(bulb)
-        bulbs[bulb_name] = bulb
-
-    # Calculate program parameters
-    duration_seconds = duration_minutes * 60
-    steps_per_transition = 20  # More steps = smoother transition
-    step_delay = transition_time / steps_per_transition
-
-    # Track start time
-    start_time = time.time()
+    # Convert duration to transitions
+    max_transitions = int(duration / transition_time)
+    transitions_count = 0
 
     # Generate initial color
     current_color = generate_soft_color()
 
-    # Apply initial color to all bulbs
-    for name, bulb in bulbs.items():
-        set_color(bulb, *current_color)
-        print(f"Set initial color on {name}: RGB{current_color}")
+    # Turn on the bulbs
+    for device in devices:
+        turn_on_bulb(device)
 
-    # Main program loop
+    print(f"Starting color fade for {duration} seconds...")
     try:
-        print(
-            f"Starting color fade for {duration_minutes} minutes. Press Ctrl+C to exit."
-        )
-        print("Enjoy the relaxing color transitions...")
-
-        transition_count = 0
-
-        while running and (time.time() - start_time) < duration_seconds:
-            transition_count += 1
+        # Keep running until max transitions or until stopped
+        while transitions_count < max_transitions and (
+            stop_event is None or not stop_event.is_set()
+        ):
 
             # Generate target color for this transition
             target_color = generate_soft_color()
-            print(f"\nTransition {transition_count}: Fading to RGB{target_color}")
 
-            # Gradually transition to the target color
-            for step in range(1, steps_per_transition + 1):
-                if not running:
-                    break
+            # Perform the transition in steps
+            for step in range(total_steps + 1):
+                # Check for stop event
+                if stop_event and stop_event.is_set():
+                    print("Received stop signal")
+                    return
 
-                # Calculate interpolated color for this step
+                # Calculate the interpolated color for this step
                 interpolated_color = interpolate_color(
-                    current_color, target_color, step, steps_per_transition
+                    current_color, target_color, step, total_steps
                 )
 
-                # Apply to all configured bulbs
-                for name, bulb in bulbs.items():
-                    set_color(bulb, *interpolated_color)
+                # Apply the color to all devices
+                for device in devices:
+                    set_color(device, *interpolated_color)
 
-                # Wait for next step
-                time.sleep(step_delay)
+                # Sleep for the step duration
+                time.sleep(step_time)
 
-            # Update current color
+            # The target color becomes our new current color
             current_color = target_color
 
-            # Display time remaining
-            elapsed = time.time() - start_time
-            remaining_minutes = max(0, (duration_seconds - elapsed) / 60)
-            print(f"Time remaining: {remaining_minutes:.1f} minutes")
+            # Increment transition counter
+            transitions_count += 1
+
+            # Print progress
+            print(f"Completed transition {transitions_count}/{max_transitions}")
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error in color fade: {e}")
 
-    print("Color fade program ended.")
+    print("Color fade program completed")
+
+
+def main():
+    # Register signal handler for clean exit with Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # Parse command-line arguments
+    if len(sys.argv) < 2:
+        print("Usage: python color_fade.py [bulb_name] [duration_minutes]")
+        return
+
+    bulb_name = sys.argv[1].lower()
+
+    # Default duration 10 minutes if not specified
+    duration_minutes = 10
+    if len(sys.argv) > 2:
+        try:
+            duration_minutes = int(sys.argv[2])
+        except ValueError:
+            print(f"Invalid duration: {sys.argv[2]}. Using default (10 minutes).")
+
+    # Convert minutes to seconds
+    duration_seconds = duration_minutes * 60
+
+    # Get devices configuration
+    device_configs = setup_devices()
+
+    # Handle the special case of controlling all bulbs
+    if bulb_name == "all_bulbs":
+        devices = []
+        for name, config in device_configs.items():
+            print(f"Adding bulb: {name}")
+            device = connect_device(config)
+            devices.append(device)
+
+        if not devices:
+            print("No bulbs found.")
+            return
+
+        # Call run_program with the list of devices
+        run_program(devices, duration=duration_seconds)
+        return
+
+    # Handle single bulb
+    if bulb_name not in device_configs:
+        print(f"Unknown bulb name: {bulb_name}")
+        print(f"Available bulbs: {', '.join(device_configs.keys())}, all_bulbs")
+        return
+
+    # Connect to the bulb
+    config = device_configs[bulb_name]
+    device = connect_device(config)
+
+    # Run the program
+    run_program(device, duration=duration_seconds)
 
 
 if __name__ == "__main__":
